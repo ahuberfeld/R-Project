@@ -1,0 +1,159 @@
+
+---
+title: "Analysis of Activity Monitor"
+output: html_document
+---
+#####Report from Amanda Huberfeld
+  
+  
+  ```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2) 
+```
+###Analyzing the Data
+####Loading and preprocessing the data
+Download and unzip the CSV file.
+```{r}
+download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip", 
+              "activity.zip")
+unzip("activity.zip")
+```
+####What is mean total number of steps taken per day?
+Divide the information into the categories of "steps", "date", and "interval". 
+```{r}
+header<-c("steps", "date", "interval")
+myData <-read.csv("activity.csv", header = TRUE, col.names = header)
+```
+Convert the information in the dates column into parse-able dates.
+```{r}
+myData$date <- as.Date(myData$date, format = "%Y-%m-%d")
+myData$interval <- as.factor(myData$interval)
+```
+Create a histogram of the total number of steps taken each day.
+```{r}
+stepsPerDay <- aggregate(steps ~ date, myData, sum)
+colnames(stepsPerDay) <- c("date","steps")
+
+plot(stepsPerDay, type = "h", main = "New average number of steps per interval across all days", 
+     xlab = "Date", ylab = "Average # of steps across all days", lwd = 1, 
+     col = "blue")
+```
+
+
+Find the mean and median of the steps per day.
+```{r}
+stepsMean   <- mean(stepsPerDay$steps, na.rm=TRUE)
+stepsMedian <- median(stepsPerDay$steps, na.rm=TRUE)
+print(stepsMean)
+print(stepsMedian)
+
+```
+####What is the average daily activity pattern?
+Plot the the average number of steps per interval in a time series plot.
+```{r}
+intervalSplit <- split(myData$steps, myData$interval)
+stepsPerInterval <- sapply(intervalSplit, mean, na.rm = TRUE)
+
+plot(stepsPerInterval, type = "l", main = "New average number of steps per interval across all days", 
+     xlab = "Interval", ylab = "Average # of steps across all days", lwd = 1, 
+     col = "blue")
+```
+
+
+Calculate which interval has the most steps.
+```{r}
+maxInterval <- max(stepsPerInterval, na.rm = TRUE)
+print(maxInterval)
+```
+###Calculating the missing values
+####Total number of missing values
+Calculate the total number of intervals for which we don't have information.
+```{r}
+missingVals <- sum(is.na(myData$steps))  
+print(missingVals)
+```
+
+####Fill in the missing values
+To fabricate the missing values, we can replace them with the mean value of that interval from each of the other days. Afterwards, double check that there are no more intervals for which we don't have information.
+```{r}
+na_fill <- function(data, pervalue) {
+  na_index <- which(is.na(data$steps))
+  na_replace <- unlist(lapply(na_index, FUN=function(idx){
+    interval = data[idx,]$interval
+    pervalue[pervalue$interval == interval,]$steps
+  }))
+  fillSteps <- data$steps
+  fillSteps[na_index] <- na_replace
+  fillSteps
+}
+```
+
+Generate a histogram with the now complete data set.
+```{r}
+newStepsPerDay <- aggregate(steps ~ date, myData, sum)
+colnames(newStepsPerDay) <- c("date","steps")
+
+plot(newStepsPerDay, type = "h", main = "New average number of steps per interval across all days", 
+     xlab = "Dates", ylab = "Average number of steps across all days", lwd = 1, 
+     col = "blue")
+```
+
+
+
+Recalculate the mean and median.
+```{r}
+newStepsMean   <- mean(newStepsPerDay$steps, na.rm=TRUE)
+newStepsMedian <- median(newStepsPerDay$steps, na.rm=TRUE)
+print(newStepsMean)
+print(newStepsMedian)
+```
+Before filling in the data, the mean was 10766.19, and the median was 10765. 
+Now, the mean is 10766.19, and so is the median.
+The mean remained the same, but now the median and the mean match.
+
+###Weekday versus weekend
+Calculate the average steps per interval for weekdays and weekends.
+First, divide days into their respective days of the week.
+```{r}
+weekdaysSteps <- function(data) {
+    weekdaysSteps <- aggregate(data$steps, by=list(interval = data$interval),
+                          FUN=mean, na.rm=T)
+    weekdaysSteps$interval <- as.integer(levels(weekdaysSteps$interval)[weekdaysSteps$interval])
+    colnames(weekdaysSteps) <- c("interval", "steps")
+    weekdaysSteps
+}
+```
+
+Divide those days into two categories: weekday and weekend.
+Put them together so that they can be analyzed side by side.
+```{r}
+dataByWeekdays <- function(data) {
+    data$weekday <- 
+            as.factor(weekdays(data$date)) # weekdays
+    weekendData <- subset(data, weekday %in% c("Saturday","Sunday"))
+    weekdayData <- subset(data, !weekday %in% c("Saturday","Sunday"))
+    
+    weekend_steps <- weekdaysSteps(weekendData)
+    weekday_steps <- weekdaysSteps(weekdayData)
+    
+    weekend_steps$dayofweek <- rep("weekend", nrow(weekend_steps))
+    weekday_steps$dayofweek <- rep("weekday", nrow(weekday_steps))
+    
+    dataByWeekdays <- rbind(weekend_steps, weekday_steps)
+    dataByWeekdays$dayofweek <- as.factor(dataByWeekdays$dayofweek)
+    dataByWeekdays
+}
+
+dataWeekdays <- dataByWeekdays(myData)
+```
+
+Plot both charts for comparison. Use the ggplot package so that you can fully compare the charts side by side.
+```{r}
+ggplot(dataWeekdays, aes(x=interval, y=steps)) + 
+geom_line(color="blue") + 
+facet_wrap(~ dayofweek, nrow=2, ncol=1) +
+labs(x="Date", y="Number of Steps")
+```
+
+
+Clearly, more activity was done on weekdays than weekends.
